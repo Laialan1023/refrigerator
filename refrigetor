@@ -1,0 +1,142 @@
+import numpy as np
+import matplotlib.pyplot as plt 
+from datetime import datetime, timedelta
+import pandas as pd
+
+T_fridge=float(input("initial temperature of fridge in Kelvin:"))
+
+def fridge(mass, capacity, heat_transfer_coefficient, area, T_init, seconds):
+    if mass>0 and capacity>0 and heat_transfer_coefficient>0 and area>0 and T_init>=0 and seconds>=0:
+        k=(heat_transfer_coefficient*area)/(mass*capacity)
+        T_final=T_fridge+(T_init-T_fridge)*np.exp(-k*seconds)
+        return T_final
+    else:
+        raise ValueError("All input values must be positive numbers, and time must be non-negative.")
+def time_check(s):
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M")
+    except Exception as e:
+        raise ValueError(f"時間格式錯誤（應為 YYYY-MM-DD HH:MM）：{s}") from e
+def time_to_reach_temp(mass, capacity, h, area, T_init, T_target):
+    k = (h * area) / (mass * capacity)
+
+    ratio = (T_target - T_fridge) / (T_init - T_fridge)
+
+    if ratio <= 0 or ratio >= 1:
+        raise ValueError("目標溫度無法達到")
+
+    t = -np.log(ratio) / k
+    return t
+
+items = []
+n = int(input("輸入要放入冰箱的物品數量："))
+
+for i in range(n):
+    print(f"\n物品 {i+1}")
+    name = input("物品名稱：")
+    mass = float(input("質量 (kg)："))
+    capacity = float(input("比熱 (J/kg·K)："))
+    h = float(input("熱傳係數 h (W/m^2·K)："))
+    area = float(input("接觸面積 A (m^2)："))
+    T_init = float(input("初始溫度 (K)："))
+    put_time = time_check(input("放入時間 (YYYY-MM-DD HH:MM)："))
+
+    items.append({
+        "name": name,
+        "mass": mass,
+        "capacity": capacity,
+        "h": h,
+        "area": area,
+        "T_init": T_init,
+        "put_time": put_time
+    })
+
+mode = input("請選擇功能：1️ 已知取出時間，計算溫度；2️ 已知目標溫度，計算取出時間。請輸入 1 或 2：").strip()
+
+if mode == "1":
+    pick_dt = time_check(input("\n輸入取出時間 (YYYY-MM-DD HH:MM)："))
+    results = []
+    for item in items:
+        seconds = (pick_dt - item["put_time"]).total_seconds()
+        if seconds < 0:
+            raise ValueError(f"{item['name']} 的放入時間比取出時間還晚")
+        T_final = fridge(
+            item["mass"],
+            item["capacity"],
+            item["h"],
+            item["area"],
+            item["T_init"],
+            seconds
+        )
+        results.append({
+            "name": item["name"],
+            "T_final (K)": f"{T_final:.2f}"
+        })
+    df = pd.DataFrame(results)
+    print("\n取出時的物品溫度")
+    print(df)
+
+    #畫圖
+    plt.figure(figsize=(12,6))
+    for item in items:
+        put_time = item["put_time"]
+        t_seconds = (pick_dt - put_time).total_seconds()
+        times = np.linspace(0, t_seconds, 200)
+
+        temps = [
+            fridge(
+                item["mass"],
+                item["capacity"],
+                item["h"],
+                item["area"],
+                item["T_init"],
+                t
+            )
+            for t in times
+        ]
+
+        times_dt = [put_time + timedelta(seconds=float(t)) for t in times]
+        plt.plot(times_dt, temps, label=item["name"])
+
+    plt.xlabel("Time")
+    plt.ylabel("Temperature (K)")
+    plt.title("Cooling Curves by Actual Put-in Time")
+    plt.legend()
+    plt.grid(True)
+    plt.gcf().autofmt_xdate()
+    plt.tight_layout()
+    plt.show()
+
+elif mode == "2":
+    T_target = float(input("\n輸入目標溫度 (K)："))
+    results = []
+    for item in items:
+        try:
+            #計算「從放入到達指定溫度」需要幾秒
+            seconds = time_to_reach_temp(
+                item["mass"],
+                item["capacity"],
+                item["h"],
+                item["area"],
+                item["T_init"],
+                T_target
+            )
+            #實際取出時間
+            pick_time = item["put_time"] + timedelta(seconds=seconds)
+            results.append({
+                "name": item["name"],
+                "取出時間": pick_time.strftime("%Y-%m-%d %H:%M"),
+                "所需時間 (小時)": f"{seconds / 3600:.2f}"
+            })
+        except ValueError:
+            results.append({
+                "name": item["name"],
+                "取出時間": "無法達到此溫度",
+                "所需時間 (小時)": "-"
+            })
+    df = pd.DataFrame(results)
+    print("\n達到指定溫度的取出時間")
+    print(df)
+
+else:
+    raise ValueError("請輸入 1 或 2")
